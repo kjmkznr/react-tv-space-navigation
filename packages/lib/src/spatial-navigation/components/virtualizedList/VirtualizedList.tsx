@@ -7,7 +7,7 @@ import {
 } from './hooks/useVirtualizedListAnimation';
 import { NodeOrientation } from '../../types/orientation';
 import { typedMemo } from '../../helpers/TypedMemo';
-import { getSizeInPxFromOneItemToAnother } from './helpers/getSizeInPxFromOneItemToAnother';
+import { computeItemOffsets } from './helpers/getSizeInPxFromOneItemToAnother';
 import { computeAllScrollOffsets } from './helpers/createScrollOffsetArray';
 import { getNumberOfItemsVisibleOnScreen } from './helpers/getNumberOfItemsVisibleOnScreen';
 import { getAdditionalNumberOfItemsRendered } from './helpers/getAdditionalNumberOfItemsRendered';
@@ -88,34 +88,25 @@ const ItemContainerWithAnimatedStyle = typedMemo(
     item,
     index,
     renderItem,
-    itemSize,
     vertical,
-    data,
+    offset,
   }: {
     item: T;
     index: number;
     renderItem: VirtualizedListProps<T>['renderItem'];
-    itemSize: number | ((item: T) => number);
     vertical: boolean;
-    data: T[];
+    /** Position of the item along the scrolling axis, in pixels */
+    offset: number;
   }) => {
-    const computeOffset = useCallback(
-      (item: T, index: number) =>
-        typeof itemSize === 'number'
-          ? index * itemSize
-          : data.slice(0, index).reduce((acc, item) => acc + itemSize(item), 0),
-      [data, itemSize],
-    );
-
     const style = useMemo(
       () =>
         StyleSheet.flatten([
           styles.item,
           vertical
-            ? { transform: [{ translateY: computeOffset(item, index) }] }
-            : { transform: [{ translateX: computeOffset(item, index) }] },
+            ? { transform: [{ translateY: offset }] }
+            : { transform: [{ translateX: offset }] },
         ]),
-      [computeOffset, item, index, vertical],
+      [offset, vertical],
     );
     return <View style={style}>{renderItem({ item, index })}</View>;
   },
@@ -170,10 +161,9 @@ export const VirtualizedList = typedMemo(
 
     const vertical = orientation === 'vertical';
 
-    const totalVirtualizedListSize = useMemo(
-      () => getSizeInPxFromOneItemToAnother(data, itemSize, 0, data.length),
-      [data, itemSize],
-    );
+    // One pass over the data: offsets[i] is the position of item i, offsets[data.length] the total size.
+    const itemOffsets = useMemo(() => computeItemOffsets(data, itemSize), [data, itemSize]);
+    const totalVirtualizedListSize = itemOffsets[data.length];
 
     const dataSliceToRender = data.slice(range.start, range.end + 1);
 
@@ -186,8 +176,17 @@ export const VirtualizedList = typedMemo(
           scrollBehavior: scrollBehavior,
           data: data,
           listSizeInPx: listSizeInPx,
+          itemOffsets,
         }),
-      [data, itemSize, listSizeInPx, nbMaxOfItems, numberOfItemsVisibleOnScreen, scrollBehavior],
+      [
+        data,
+        itemOffsets,
+        itemSize,
+        listSizeInPx,
+        nbMaxOfItems,
+        numberOfItemsVisibleOnScreen,
+        scrollBehavior,
+      ],
     );
 
     useOnEndReached({
@@ -272,9 +271,8 @@ export const VirtualizedList = typedMemo(
                 renderItem={renderItem}
                 item={item}
                 index={index}
-                itemSize={itemSize}
                 vertical={vertical}
-                data={data}
+                offset={itemOffsets[index]}
               />
             );
           })}

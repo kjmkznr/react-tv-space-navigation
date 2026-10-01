@@ -6,16 +6,18 @@ const computeStickToStartTranslation = <T>({
   itemSizeInPx,
   data,
   maxPossibleLeftAlignedIndex,
+  itemOffsets,
 }: {
   currentlyFocusedItemIndex: number;
   itemSizeInPx: number | ((item: T) => number);
   data: T[];
   maxPossibleLeftAlignedIndex: number;
+  itemOffsets?: number[];
 }) => {
-  const scrollOffset =
-    currentlyFocusedItemIndex < maxPossibleLeftAlignedIndex
-      ? getSizeInPxFromOneItemToAnother(data, itemSizeInPx, 0, currentlyFocusedItemIndex)
-      : getSizeInPxFromOneItemToAnother(data, itemSizeInPx, 0, maxPossibleLeftAlignedIndex);
+  const end = Math.min(currentlyFocusedItemIndex, maxPossibleLeftAlignedIndex);
+  const scrollOffset = itemOffsets
+    ? itemOffsets[Math.min(end, data.length)]
+    : getSizeInPxFromOneItemToAnother(data, itemSizeInPx, 0, end);
   return -scrollOffset;
 };
 
@@ -25,12 +27,14 @@ const computeStickToEndTranslation = <T>({
   data,
   listSizeInPx,
   maxPossibleRightAlignedIndex,
+  itemOffsets,
 }: {
   currentlyFocusedItemIndex: number;
   itemSizeInPx: number | ((item: T) => number);
   data: T[];
   listSizeInPx: number;
   maxPossibleRightAlignedIndex: number;
+  itemOffsets?: number[];
 }) => {
   if (currentlyFocusedItemIndex <= maxPossibleRightAlignedIndex) return -0;
 
@@ -39,12 +43,9 @@ const computeStickToEndTranslation = <T>({
       ? itemSizeInPx(data[currentlyFocusedItemIndex])
       : itemSizeInPx;
 
-  const sizeOfListFromStartToCurrentlyFocusedItem = getSizeInPxFromOneItemToAnother(
-    data,
-    itemSizeInPx,
-    0,
-    currentlyFocusedItemIndex,
-  );
+  const sizeOfListFromStartToCurrentlyFocusedItem = itemOffsets
+    ? itemOffsets[Math.min(currentlyFocusedItemIndex, data.length)]
+    : getSizeInPxFromOneItemToAnother(data, itemSizeInPx, 0, currentlyFocusedItemIndex);
 
   const scrollOffset =
     sizeOfListFromStartToCurrentlyFocusedItem + currentlyFocusedItemSize - listSizeInPx;
@@ -83,6 +84,7 @@ export const computeTranslation = <T>({
   listSizeInPx,
   maxPossibleLeftAlignedIndex,
   maxPossibleRightAlignedIndex,
+  itemOffsets,
 }: {
   currentlyFocusedItemIndex: number;
   itemSizeInPx: number | ((item: T) => number);
@@ -93,6 +95,8 @@ export const computeTranslation = <T>({
   listSizeInPx: number;
   maxPossibleLeftAlignedIndex: number;
   maxPossibleRightAlignedIndex: number;
+  /** Optional precomputed result of computeItemOffsets(data, itemSizeInPx): avoids a quadratic computation. */
+  itemOffsets?: number[];
 }) => {
   switch (scrollBehavior) {
     case 'stick-to-start':
@@ -101,6 +105,7 @@ export const computeTranslation = <T>({
         itemSizeInPx,
         data,
         maxPossibleLeftAlignedIndex,
+        itemOffsets,
       });
     case 'stick-to-end':
       return computeStickToEndTranslation({
@@ -109,6 +114,7 @@ export const computeTranslation = <T>({
         data,
         listSizeInPx,
         maxPossibleRightAlignedIndex,
+        itemOffsets,
       });
     case 'jump-on-scroll':
       return computeJumpOnScrollTranslation({

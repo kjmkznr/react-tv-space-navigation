@@ -19,3 +19,22 @@ export const getSizeInPxFromOneItemToAnother = <T>(
   }
   return data.slice(start, end).length * itemSizeInPx;
 };
+
+/**
+ * Computes, in one pass, the offset of every item: offsets[i] is the size in pixels of items 0 to i - 1,
+ * so offsets[data.length] is the total size of the list.
+ * Use it instead of calling getSizeInPxFromOneItemToAnother for each index, which is quadratic.
+ */
+export const computeItemOffsets = <T>(
+  data: T[],
+  itemSizeInPx: number | ((item: T) => number),
+): number[] => {
+  const offsets: number[] = new Array(data.length + 1);
+  offsets[0] = 0;
+  for (let index = 0; index < data.length; index++) {
+    offsets[index + 1] =
+      offsets[index] +
+      (typeof itemSizeInPx === 'function' ? itemSizeInPx(data[index]) : itemSizeInPx);
+  }
+  return offsets;
+};
