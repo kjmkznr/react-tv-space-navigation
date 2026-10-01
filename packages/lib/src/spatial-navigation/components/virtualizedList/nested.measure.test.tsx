@@ -9,6 +9,7 @@ import testRemoteControlManager from '../tests/helpers/testRemoteControlManager'
 import { setComponentLayoutSize } from '../../../testing/setComponentLayoutSize';
 import { SpatialNavigationFocusableView } from '../FocusableView';
 import SpatialNavigator from '../../SpatialNavigator';
+import { SpatialNavigationVirtualizedListRef } from '../../types/SpatialNavigationVirtualizedListRef';
 
 const counters = {
   cardRender: 0,
@@ -45,10 +46,15 @@ const rows = Array.from({ length: 12 }, (_, r) => ({
   cards: Array.from({ length: 20 }, (_, c) => ({ c })),
 }));
 
+const rowRefs: Record<number, SpatialNavigationVirtualizedListRef | null> = {};
+
 const renderRow = ({ item }: { item: (typeof rows)[number] }) => {
   counters.rowRender++;
   return (
     <SpatialNavigationVirtualizedList
+      ref={(el) => {
+        rowRefs[item.r] = el;
+      }}
       data={item.cards}
       itemSize={100}
       renderItem={({ item: card }) => <Card r={item.r} c={card.c} />}
@@ -95,5 +101,38 @@ describe('nested virtualized lists (vertical list of horizontal lists)', () => {
     out.forEach((o) => {
       expect(o).toMatchObject({ cardMount: 0, cardUnmount: 0, register: 0, unregister: 0 });
     });
+  });
+
+  it('does not carry the horizontal scroll position of a row over to the row that recycles it', () => {
+    const comp = render(
+      <SpatialNavigationRoot>
+        <DefaultFocus>
+          <SpatialNavigationVirtualizedList
+            testID="outer"
+            orientation="vertical"
+            data={rows}
+            itemSize={200}
+            renderItem={renderRow}
+          />
+        </DefaultFocus>
+      </SpatialNavigationRoot>,
+    );
+    act(() => jest.runAllTimers());
+    setComponentLayoutSize('outer', comp, { width: 1000, height: 500 });
+    act(() => jest.runAllTimers());
+
+    for (let i = 0; i < 3; i++) testRemoteControlManager.handleRight();
+    expect(rowRefs[0]?.currentlyFocusedItemIndex).toBe(3);
+
+    // Rows 3 to 6 are not focused yet: row 6 is rendered by the instance that rendered row 0.
+    for (let i = 0; i < 3; i++) testRemoteControlManager.handleDown();
+    expect(
+      Object.fromEntries(
+        Object.entries(rowRefs).map(([r, x]) => [r, x?.currentlyFocusedItemIndex]),
+      ),
+    ).toMatchObject({ 6: 0 });
+    // And entering it must not jump to the item remembered from row 0.
+    for (let i = 0; i < 3; i++) testRemoteControlManager.handleDown();
+    expect(rowRefs[6]?.currentlyFocusedItemIndex).toBe(0);
   });
 });

@@ -73,11 +73,32 @@ export default class SpatialNavigator {
     this.cancelPendingMove(nodeId);
     if (this.lrud.getNode(newParentId)) {
       this.lrud.moveNode(nodeId, newParentId);
+      this.forgetFocusMemory(nodeId);
       // A queued focus may have been waiting for a focusable node to appear under the new parent.
       this.handleQueuedFocus();
       return;
     }
     (this.pendingMoves[newParentId] ??= []).push(nodeId);
+  }
+
+  /**
+   * A moved subtree now holds other content (e.g. a recycled row), so the "last focused child" LRUD remembers
+   * inside it is meaningless: forget it, unless the focus currently lives in this subtree.
+   */
+  private forgetFocusMemory(nodeId: string) {
+    const root = this.lrud.getNode(nodeId);
+    if (!root) return;
+    const focused = this.lrud.getCurrentFocusNode();
+    const clear = (node: NonNullable<typeof root>): boolean => {
+      if (node === focused) return true;
+      let containsFocus = false;
+      node.children?.forEach((child) => {
+        if (clear(child)) containsFocus = true;
+      });
+      if (!containsFocus) node.activeChild = undefined;
+      return containsFocus;
+    };
+    clear(root);
   }
 
   private cancelPendingMove(nodeId: string) {

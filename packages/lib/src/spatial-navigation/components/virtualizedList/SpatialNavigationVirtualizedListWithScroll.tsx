@@ -169,7 +169,11 @@ const useRemotePointerVirtualizedListScrollProps = <T,>({
 export const SpatialNavigationVirtualizedListWithScroll = typedMemo(
   typedForwardRef(
     <T,>(
-      props: SpatialNavigationVirtualizedListWithScrollProps<T> & PointerScrollProps,
+      props: SpatialNavigationVirtualizedListWithScrollProps<T> &
+        PointerScrollProps & {
+          /** Id of the node containing the list: changes when the list instance is recycled by a parent list. */
+          parentIdOfList?: string;
+        },
       ref: ForwardedRef<SpatialNavigationVirtualizedListRef>,
     ) => {
       const {
@@ -180,8 +184,19 @@ export const SpatialNavigationVirtualizedListWithScroll = typedMemo(
         descendingArrowContainerStyle,
         ascendingArrowContainerStyle,
         scrollInterval = 100,
+        parentIdOfList,
       } = props;
       const [currentlyFocusedItemIndex, setCurrentlyFocusedItemIndex] = useState(0);
+
+      // When this list sits inside a recycled item of a parent VirtualizedList, the same instance is
+      // reused for another parent item. Its scroll position must not leak from the previous one, so we
+      // reset it when the parent changes. Plain data updates (e.g. pagination) don't change the parent.
+      const [previousParentId, setPreviousParentId] = useState(parentIdOfList);
+      if (previousParentId !== parentIdOfList) {
+        setPreviousParentId(parentIdOfList);
+        setCurrentlyFocusedItemIndex(0);
+      }
+
       const spatialNavigator = useSpatialNavigator();
       const { deviceType, deviceTypeRef, descendingArrowProps, ascendingArrowProps, idRef } =
         useRemotePointerVirtualizedListScrollProps({

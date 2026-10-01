@@ -5,6 +5,7 @@ import {
   SpatialNavigationVirtualizedListWithScroll,
   SpatialNavigationVirtualizedListWithScrollProps,
 } from './SpatialNavigationVirtualizedListWithScroll';
+import { useParentId } from '../../context/ParentIdContext';
 import { typedMemo } from '../../helpers/TypedMemo';
 
 import { typedForwardRef } from '../../helpers/TypedForwardRef';
@@ -20,12 +21,17 @@ export const SpatialNavigationVirtualizedList = typedMemo(
       props: SpatialNavigationVirtualizedListWithScrollProps<T> & PointerScrollProps,
       ref: ForwardedRef<SpatialNavigationVirtualizedListRef>,
     ) => {
+      const parentId = useParentId();
       return (
         <SpatialNavigationNode
           alignInGrid={props.isGrid ?? false}
           orientation={props.orientation ?? 'horizontal'}
         >
-          <SpatialNavigationVirtualizedListWithScroll<T> {...props} ref={ref} />
+          <SpatialNavigationVirtualizedListWithScroll<T>
+            {...props}
+            parentIdOfList={parentId}
+            ref={ref}
+          />
         </SpatialNavigationNode>
       );
     },
