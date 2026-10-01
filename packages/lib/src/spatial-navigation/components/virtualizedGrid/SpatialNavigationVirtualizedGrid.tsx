@@ -1,6 +1,15 @@
-import React, { ForwardedRef, ReactNode, useCallback, useEffect, useMemo } from 'react';
+import React, {
+  ForwardedRef,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { View, ViewStyle, StyleSheet } from 'react-native';
 import range from 'lodash/range';
+import uniqueId from 'lodash.uniqueid';
 
 import { SpatialNavigationVirtualizedList } from '../virtualizedList/SpatialNavigationVirtualizedList';
 import {
@@ -48,7 +57,10 @@ const useRegisterGridRowVirtualNodes = ({ numberOfColumns }: { numberOfColumns: 
   const spatialNavigator = useSpatialNavigator();
   const parentId = useParentId();
 
-  const getNthVirtualNodeID = useCallback((index: number) => `${parentId}_${index}`, [parentId]);
+  // Stable for the whole life of the row: when the row is recycled under another parent, the column
+  // virtual nodes are moved with their subtree instead of being unregistered and registered again.
+  const [baseId] = useState(() => uniqueId(`${parentId}_`));
+  const getNthVirtualNodeID = useCallback((index: number) => `${baseId}_${index}`, [baseId]);
 
   // This function must be idempotent so we don't register existing nodes again when grid data changes
   const registerNthVirtualNode = useCallback(
@@ -66,18 +78,30 @@ const useRegisterGridRowVirtualNodes = ({ numberOfColumns }: { numberOfColumns: 
     [spatialNavigator, parentId, getNthVirtualNodeID],
   );
 
-  const unregisterNthVirtualNode = useCallback(
-    (index: number) => {
-      return spatialNavigator.unregisterNode(getNthVirtualNodeID(index));
-    },
-    [spatialNavigator, getNthVirtualNodeID],
-  );
+  const isRegisteredRef = useRef(false);
 
   useEffect(() => {
+    if (isRegisteredRef.current) {
+      range(numberOfColumns).forEach((i) =>
+        spatialNavigator.moveNode(getNthVirtualNodeID(i), parentId),
+      );
+      return;
+    }
+    isRegisteredRef.current = true;
     range(numberOfColumns).forEach((i) => registerNthVirtualNode(i));
-    return () => range(numberOfColumns).forEach((i) => unregisterNthVirtualNode(i));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- unfortunately, we can't have clean effects with lrud for now
   }, [parentId]);
+
+  useEffect(
+    () => () => {
+      isRegisteredRef.current = false;
+      range(numberOfColumns).forEach((i) =>
+        spatialNavigator.unregisterNode(getNthVirtualNodeID(i)),
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- unregister only on unmount
+    [],
+  );
 
   return { getNthVirtualNodeID };
 };

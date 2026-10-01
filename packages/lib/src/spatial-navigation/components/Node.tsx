@@ -4,7 +4,7 @@ import { useSpatialNavigatorDefaultFocus } from '../context/DefaultFocusContext'
 import { ParentIdContext, useParentId } from '../context/ParentIdContext';
 import { useSpatialNavigatorParentScroll } from '../context/ParentScrollContext';
 import { useSpatialNavigator } from '../context/SpatialNavigatorContext';
-import { useUniqueId } from '../hooks/useUniqueId';
+import uniqueId from 'lodash.uniqueid';
 import { NodeOrientation } from '../types/orientation';
 import { NodeIndexRange } from '@bam.tech/lrud';
 import { SpatialNavigationNodeRef } from '../types/SpatialNavigationNodeRef';
@@ -115,8 +115,10 @@ export const SpatialNavigationNode = forwardRef<SpatialNavigationNodeRef, Props>
     const isRootActive = useIsRootActive();
     const [isFocused, setIsFocused] = useState(false);
     const [isActive, setIsActive] = useState(false);
-    // If parent changes, we have to re-register the Node + all children -> adding the parentId to the nodeId makes the children re-register.
-    const id = useUniqueId({ prefix: `${parentId}_node_` });
+    // The id is stable for the whole life of the component: if the parent changes (ex: recycled items of a
+    // virtualized list), the node is moved under its new parent together with its subtree, instead of
+    // unregistering and re-registering every descendant.
+    const [id] = useState(() => uniqueId(`${parentId}_node_`));
 
     useImperativeHandle(
       ref,
@@ -163,7 +165,14 @@ export const SpatialNavigationNode = forwardRef<SpatialNavigationNodeRef, Props>
 
     const accessedPropertiesRef = useRef<Set<keyof FocusableNodeState>>(new Set());
 
+    const isRegisteredRef = useRef(false);
+
     useEffect(() => {
+      if (isRegisteredRef.current) {
+        spatialNavigator.moveNode(id, parentId);
+        return;
+      }
+      isRegisteredRef.current = true;
       spatialNavigator.registerNode(id, {
         parent: parentId,
         isFocusable,
@@ -197,10 +206,17 @@ export const SpatialNavigationNode = forwardRef<SpatialNavigationNodeRef, Props>
           }
         },
       });
-
-      return () => spatialNavigator.unregisterNode(id);
       // eslint-disable-next-line react-hooks/exhaustive-deps -- unfortunately, we can't have clean effects with lrud for now
     }, [parentId]);
+
+    useEffect(
+      () => () => {
+        isRegisteredRef.current = false;
+        spatialNavigator.unregisterNode(id);
+      },
+      // eslint-disable-next-line react-hooks/exhaustive-deps -- unregister only on unmount
+      [],
+    );
 
     useEffect(() => {
       if (shouldHaveDefaultFocus && isFocusable && !spatialNavigator.hasOneNodeFocused()) {

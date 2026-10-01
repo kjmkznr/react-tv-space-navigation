@@ -37,6 +37,12 @@ export default class SpatialNavigator {
         // OK, we successfully registered an element.
         // Now, we check if some other elements were depending on us to be registered.
         // ...and we do it recursively.
+        const movesWaitingForThisNode = this.pendingMoves[id];
+        if (movesWaitingForThisNode) {
+          delete this.pendingMoves[id];
+          movesWaitingForThisNode.forEach((nodeId) => this.moveNode(nodeId, id));
+        }
+
         const potentialNodesToRegister = this.registerMap[id];
         if (!potentialNodesToRegister || potentialNodesToRegister.length === 0) return;
 
@@ -56,7 +62,34 @@ export default class SpatialNavigator {
     }
   }
 
+  /** Moves that target a parent which is not registered yet: parentId -> ids of nodes waiting to be moved under it. */
+  private pendingMoves: { [parentId: string]: string[] } = {};
+
+  /**
+   * Re-parents an already registered node (and its whole subtree) without unregistering it.
+   * If the new parent is not registered yet, the move is queued until it is.
+   */
+  public moveNode(nodeId: string, newParentId: string) {
+    this.cancelPendingMove(nodeId);
+    if (this.lrud.getNode(newParentId)) {
+      this.lrud.moveNode(nodeId, newParentId);
+      // A queued focus may have been waiting for a focusable node to appear under the new parent.
+      this.handleQueuedFocus();
+      return;
+    }
+    (this.pendingMoves[newParentId] ??= []).push(nodeId);
+  }
+
+  private cancelPendingMove(nodeId: string) {
+    Object.keys(this.pendingMoves).forEach((parentId) => {
+      const remaining = this.pendingMoves[parentId]?.filter((id) => id !== nodeId) ?? [];
+      if (remaining.length === 0) delete this.pendingMoves[parentId];
+      else this.pendingMoves[parentId] = remaining;
+    });
+  }
+
   public unregisterNode(...params: Parameters<Lrud['unregisterNode']>) {
+    if (typeof params[0] === 'string') this.cancelPendingMove(params[0]);
     this.lrud.unregisterNode(...params);
   }
 
