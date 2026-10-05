@@ -269,4 +269,73 @@ describe('SpatialNavigationVirtualizedList with loop', () => {
     testRemoteControlManager.handleRight();
     expectButtonToHaveFocus(component, 'item 1');
   });
+
+  describe('when the data changes', () => {
+    const makeData = (n: number, prefix = 'item') =>
+      Array.from({ length: n }, (_, i) => ({ label: `${prefix} ${i + 1}` }));
+
+    const renderWithDataControl = () => {
+      const control: { setData: (data: { label: string }[]) => void } = {
+        setData: () => undefined,
+      };
+      const Wrapper = () => {
+        const [data, setData] = useState(makeData(5));
+        control.setData = setData;
+        return (
+          <SpatialNavigationRoot>
+            <SpatialNavigationNode orientation="vertical">
+              <>
+                <DefaultFocus>
+                  <TestButton title="menu" onSelect={() => undefined} />
+                </DefaultFocus>
+                <SpatialNavigationVirtualizedList
+                  testID={listTestId}
+                  loop
+                  data={data}
+                  itemSize={100}
+                  renderItem={({ item }) => (
+                    <TestButton title={item.label} onSelect={() => undefined} />
+                  )}
+                />
+              </>
+            </SpatialNavigationNode>
+          </SpatialNavigationRoot>
+        );
+      };
+      const component = render(<Wrapper />);
+      act(() => jest.runAllTimers());
+      setComponentLayoutSize(listTestId, component, { width: 300, height: 300 });
+      return { component, control };
+    };
+
+    it('does not steal the focus when it is not in the list', () => {
+      const { component, control } = renderWithDataControl();
+      expectButtonToHaveFocus(component, 'menu');
+
+      act(() => control.setData(makeData(8)));
+      act(() => jest.runAllTimers());
+      expectButtonToHaveFocus(component, 'menu');
+
+      // ...but the item that will be focused when entering the list is the first one
+      testRemoteControlManager.handleDown();
+      expectButtonToHaveFocus(component, 'item 1');
+    });
+
+    it('works after the data went empty and came back', () => {
+      const { component, control } = renderWithDataControl();
+
+      act(() => control.setData([]));
+      act(() => jest.runAllTimers());
+      act(() => control.setData(makeData(5, 'new')));
+      act(() => jest.runAllTimers());
+
+      testRemoteControlManager.handleDown();
+      expectButtonToHaveFocus(component, 'new 1');
+      testRemoteControlManager.handleRight();
+      expectButtonToHaveFocus(component, 'new 2');
+      testRemoteControlManager.handleLeft();
+      testRemoteControlManager.handleLeft();
+      expectButtonToHaveFocus(component, 'new 5');
+    });
+  });
 });

@@ -28,6 +28,7 @@ import React from 'react';
 import { DefaultFocus, useSpatialNavigatorDefaultFocus } from '../../context/DefaultFocusContext';
 import { typedForwardRef } from '../../helpers/TypedForwardRef';
 import { SpatialNavigationVirtualizedListRef } from '../../types/SpatialNavigationVirtualizedListRef';
+import { useParentId } from '../../context/ParentIdContext';
 import { LoopWindow, getLogicalIndex, getLoopWindow } from './helpers/getLoopWindow';
 import { getNumberOfItemsVisibleOnScreen } from './helpers/getNumberOfItemsVisibleOnScreen';
 import { getAdditionalNumberOfItemsRendered } from './helpers/getAdditionalNumberOfItemsRendered';
@@ -130,6 +131,7 @@ const focusReducer = (state: FocusState, action: FocusAction): FocusState => {
       if (!action.params.loop) {
         return focusedIndex === state.focusedIndex ? state : { ...state, focusedIndex };
       }
+      if (action.params.dataLength === 0) return state;
       const window = action.keepWindow
         ? state.window
         : getLoopWindow({ ...action.params, focusedIndex, previous: state.window });
@@ -140,6 +142,7 @@ const focusReducer = (state: FocusState, action: FocusAction): FocusState => {
     case 'reset': {
       // The data changed: keep the same logical item focused when possible, and rebuild the window around it
       const { dataLength } = action.params;
+      if (dataLength === 0) return { focusedIndex: 0, window: { start: 0, end: 0 }, dataLength };
       const previousLogicalIndex =
         state.dataLength > 0 ? getLogicalIndex(state.focusedIndex, state.dataLength) : 0;
       const focusedIndex = Math.min(previousLogicalIndex, Math.max(dataLength - 1, 0));
@@ -170,7 +173,9 @@ const useLoopLookahead = <T,>({
   scrollBehavior,
   additionalItemsRendered,
   measuredNumberOfRenderedItems,
+  loop,
 }: {
+  loop: boolean;
   data: T[];
   itemSize: number | ((item: T) => number);
   orientation: 'horizontal' | 'vertical';
@@ -178,6 +183,8 @@ const useLoopLookahead = <T,>({
   additionalItemsRendered: number;
   measuredNumberOfRenderedItems: number;
 }) => {
+  // Nothing to compute for a list that does not loop
+  if (!loop) return 0;
   const screen = Dimensions.get('window');
   const listSizeInPx = orientation === 'vertical' ? screen.height : screen.width;
   const numberOfItemsVisibleOnScreen = getNumberOfItemsVisibleOnScreen({
@@ -335,7 +342,9 @@ export const SpatialNavigationVirtualizedListWithScroll = typedMemo(
           );
         }
       }, [props.loop, isLoopSupported, scrollBehavior]);
-      const loop = !!props.loop && isLoopSupported && dataLength > 0;
+      // Does not depend on the length of the data: it changes the way virtual nodes are identified, so it must be stable.
+      // (toggling `loop` or `scrollBehavior` while the list is mounted is not supported)
+      const loop = !!props.loop && isLoopSupported;
 
       const [measuredNumberOfRenderedItems, setMeasuredNumberOfRenderedItems] = useState(0);
       const lookahead = useLoopLookahead({
@@ -345,6 +354,7 @@ export const SpatialNavigationVirtualizedListWithScroll = typedMemo(
         scrollBehavior,
         additionalItemsRendered: props.additionalItemsRendered ?? 2,
         measuredNumberOfRenderedItems,
+        loop,
       });
       const loopParams: LoopParams = { loop, dataLength, lookahead, lookbehind: lookahead };
       // Dispatched functions read the params at the time they are called
@@ -386,16 +396,20 @@ export const SpatialNavigationVirtualizedListWithScroll = typedMemo(
           loop,
         });
 
-      // The virtual nodes of the previous data have been unregistered, which moved the focus somewhere else:
-      // focus the item that is supposed to be focused again
+      // The virtual nodes of the previous data have been unregistered. If the focus was in the list, it moved to
+      // another item: focus the item that is supposed to be focused again. If it was elsewhere, do not steal it,
+      // only make this item the one that will be focused when the focus enters the list.
+      const listId = useParentId();
       const previousDataLength = useRef(dataLength);
       useEffect(() => {
         if (previousDataLength.current === dataLength) return;
         previousDataLength.current = dataLength;
-        if (loop && idRef.current) {
-          spatialNavigator.grabFocusDeferred(
-            idRef.current.getNthVirtualNodeID(currentlyFocusedItemIndex),
-          );
+        if (!loop || !idRef.current || dataLength === 0) return;
+        const focusedNodeId = idRef.current.getNthVirtualNodeID(currentlyFocusedItemIndex);
+        if (spatialNavigator.isFocusWithin(listId)) {
+          spatialNavigator.grabFocusDeferred(focusedNodeId);
+        } else {
+          spatialNavigator.setActiveChild(listId, focusedNodeId);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps -- only when the length of the data changes
       }, [dataLength]);
@@ -410,7 +424,7 @@ export const SpatialNavigationVirtualizedListWithScroll = typedMemo(
       /** Absolute index of the item at the given logical index that is the closest to the focused one, in the window */
       const getClosestAbsoluteIndex = useCallback(
         (index: number) => {
-          if (!loop) return index;
+          if (!loop || dataLength === 0) return index;
           const logicalIndex = getLogicalIndex(index, dataLength);
           const sameCycleIndex =
             currentlyFocusedItemIndex -
@@ -452,9 +466,10 @@ export const SpatialNavigationVirtualizedListWithScroll = typedMemo(
             scrollTo(index);
           },
           scrollTo,
-          currentlyFocusedItemIndex: loop
-            ? getLogicalIndex(currentlyFocusedItemIndex, dataLength)
-            : currentlyFocusedItemIndex,
+          currentlyFocusedItemIndex:
+            loop && dataLength > 0
+              ? getLogicalIndex(currentlyFocusedItemIndex, dataLength)
+              : currentlyFocusedItemIndex,
         }),
         [
           currentlyFocusedItemIndex,
@@ -470,7 +485,10 @@ export const SpatialNavigationVirtualizedListWithScroll = typedMemo(
       // but the user only knows about the index in `data`
       const renderLogicalItem: typeof props.renderItem = useCallback(
         ({ item, index }) =>
-          renderItem({ item, index: loop ? getLogicalIndex(index, dataLength) : index }),
+          renderItem({
+            item,
+            index: loop && dataLength > 0 ? getLogicalIndex(index, dataLength) : index,
+          }),
         [renderItem, loop, dataLength],
       );
 
@@ -487,14 +505,17 @@ export const SpatialNavigationVirtualizedListWithScroll = typedMemo(
         [setCurrentlyFocusedItemIndexCallback, renderItem, renderLogicalItem, loop],
       );
 
-      const numberOfCycles = loop ? (loopWindow.end - loopWindow.start) / dataLength : 1;
+      const numberOfCycles =
+        loop && dataLength > 0 ? (loopWindow.end - loopWindow.start) / dataLength : 1;
       const windowData = useMemo(
-        () => (loop ? repeatData(data, numberOfCycles) : data),
-        [loop, data, numberOfCycles],
+        () => (loop && dataLength > 0 ? repeatData(data, numberOfCycles) : data),
+        [loop, data, dataLength, numberOfCycles],
       );
       const startOffsetPx = useMemo(
         () =>
-          loop ? (loopWindow.start / dataLength) * getLoopWindowSizeInPx(data, props.itemSize) : 0,
+          loop && dataLength > 0
+            ? (loopWindow.start / dataLength) * getLoopWindowSizeInPx(data, props.itemSize)
+            : 0,
         [loop, loopWindow.start, dataLength, data, props.itemSize],
       );
 

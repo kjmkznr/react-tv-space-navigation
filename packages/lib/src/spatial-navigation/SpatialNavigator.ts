@@ -62,6 +62,7 @@ export default class SpatialNavigator {
   }
 
   public unregisterNode(...params: Parameters<Lrud['unregisterNode']>) {
+    delete this.pendingActiveChildren[params[0] as string];
     this.lrud.unregisterNode(...params);
   }
 
@@ -187,6 +188,16 @@ export default class SpatialNavigator {
       return;
     }
     this.pendingActiveChildren[parentId] = childId;
+  };
+
+  /** Whether the focused node is `ancestorId` or one of its descendants. */
+  public isFocusWithin = (ancestorId: string) => {
+    let node = this.lrud.getCurrentFocusNode();
+    while (node) {
+      if (node.id === ancestorId) return true;
+      node = node.parent;
+    }
+    return false;
   };
 
   public grabFocus = (id: string) => {
