@@ -1,6 +1,6 @@
 # SpatialNavigationVirtualizedList 無限ループスクロール(`loop`)— 要件定義 / 設計
 
-ステータス: Draft v2(敵対的レビュー反映済み・未実装)
+ステータス: 実装済み(実装時の差分は末尾「実装メモ」を参照)
 
 ## 1. 背景と目的
 
@@ -216,3 +216,12 @@ getLoopWindow({ dataLength: N, focusedIndex, previous, lookahead, lookbehind }):
 - 敵対的レビュー(別モデルによる実コード検証)で、`stick-to-end` のトリム時逆スクロール(B1)・表示消失(B2)、lrud の登録順前提の誤り(M1)、`ref.focus` 経由でのフォーカス喪失(M2)、state 同期(M3)、初期ウィンドウ(M4)、`data` 変更時のフォーカス(M5)、lookahead 概算(m1)、計算量(m2)、id キャッシュ(m3)、`keyExtractor`(m4)、abs/local の混同(m5)、精度(m6)、フォールバック(m7)が指摘された
 - 決定: `stick-to-end` は非対応(B1/B2/m7 解消)、リスト外へのフォーカス移動は LRUD に任せる(F14)、先頭方向のループは対応(M1 を踏まえ lrud の `index` 挿入を利用)
 - その他は本版で反映
+
+## 実装メモ(設計からの差分)
+
+- 初回フォーカス: `DefaultFocus` は「最初に描画された focusable」にフォーカスを与えるため、ループ時は先頭に前周の要素が描画され、abs=-2 などが先にフォーカスされてしまう。対策として (1) ループ時の各アイテムを `DefaultFocus enable={親の設定 && abs === 0}` で包む、(2) 初回登録は abs ≥ 0 を先に登録し、abs < 0 は `index` 指定で先頭に挿入する、(3) `SpatialNavigator.setActiveChild(parentId, childId)` を追加し、abs=0 の仮想ノードを activeChild にする(未登録なら登録時に遅延適用)
+- 仮想ノード id: ループ時は `useCachedValues` を使わず `${prefix}_${abs}`(区切りの `_` が必須。`uniqueId` の末尾が数字のため)
+- 可変サイズの offset / 全周回のサイズは `computeLoopItemOffsets` で 1 パス計算
+- `data.length` の変更は render 中に `reset` を dispatch し(ウィンドウとデータの不整合を作らない)、変更後に `grabFocusDeferred` でフォーカスを取り直す
+- スコープ外のまま: 座標の再基準化(R1)、`stick-to-end`
+- 未確認: 実機(native / web)での負座標アイテムの描画(R2)。jest(react-native-testing-library)では検証済みだが、ブラウザ・実機での目視確認は未実施

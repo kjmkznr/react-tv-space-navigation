@@ -60,6 +60,7 @@ const menuItems: Record<keyof RootTabParamList, MenuItems> = {
   },
   ListWithVariableSize: { label: 'List with variable size', icon: 'LayoutDashboard' },
   AsynchronousContent: { label: 'Asynchronous content', icon: 'Timer' },
+  LoopListPage: { label: 'Looping list', icon: 'Repeat' },
 };
 
 export const Menu = ({ state, navigation }: BottomTabBarProps) => {

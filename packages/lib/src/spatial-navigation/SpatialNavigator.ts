@@ -31,6 +31,11 @@ export default class SpatialNavigator {
       if (parent === undefined || this.lrud.getNode(parent)) {
         this.lrud.registerNode(...params);
 
+        if (parent !== undefined && this.pendingActiveChildren[parent] === id) {
+          this.lrud.setActiveChild(parent, id);
+          delete this.pendingActiveChildren[parent];
+        }
+
         // After we successfully register a node, we need to check whether it needs to grab the focus or not.
         this.handleQueuedFocus();
 
@@ -165,6 +170,23 @@ export default class SpatialNavigator {
         // pass
       }
     }
+  };
+
+  private pendingActiveChildren: { [parentId: string]: string } = {};
+
+  /**
+   * Makes `childId` the child of `parentId` that will receive the focus the next time the focus enters `parentId`,
+   * without moving the focus. Useful to choose the initially focused item of a list whose first focusable item
+   * is not the one that must be focused.
+   *
+   * If one of the nodes is not registered yet, it will be done as soon as `childId` is registered.
+   */
+  public setActiveChild = (parentId: string, childId: string) => {
+    if (this.lrud.getNode(parentId) && this.lrud.getNode(childId)) {
+      this.lrud.setActiveChild(parentId, childId);
+      return;
+    }
+    this.pendingActiveChildren[parentId] = childId;
   };
 
   public grabFocus = (id: string) => {

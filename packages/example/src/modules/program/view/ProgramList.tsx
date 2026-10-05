@@ -34,6 +34,7 @@ type ProgramListProps = {
   variant?: 'normal' | 'variable-size';
   parentRef?: MutableRefObject<SpatialNavigationVirtualizedListRef | null>;
   isActive: boolean;
+  loop?: boolean;
 };
 
 const isItemLarge = (item: { id: string }) => {
@@ -41,7 +42,10 @@ const isItemLarge = (item: { id: string }) => {
 };
 
 export const ProgramList = React.forwardRef<View, ProgramListProps>(
-  ({ orientation, containerStyle, data, parentRef, isActive, variant, listSize = 1000 }, ref) => {
+  (
+    { orientation, containerStyle, data, parentRef, isActive, variant, listSize = 1000, loop },
+    ref,
+  ) => {
     const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
     const theme = useTheme();
     const listRef = useRef<SpatialNavigationVirtualizedListRef | null>(null);
@@ -97,6 +101,7 @@ export const ProgramList = React.forwardRef<View, ProgramListProps>(
       <Container isActive={isActive} style={containerStyle} ref={ref}>
         <SpatialNavigationVirtualizedList
           orientation={orientation}
+          loop={loop}
           data={programInfos}
           renderItem={renderItem}
           itemSize={itemSize}
@@ -124,12 +129,14 @@ export const ProgramsRow = ({
   listSize,
   parentRef,
   data,
+  loop,
 }: {
   containerStyle?: object;
   variant?: 'normal' | 'variable-size';
   listSize?: number;
   parentRef?: MutableRefObject<SpatialNavigationVirtualizedListRef | null>;
   data?: ProgramInfo[];
+  loop?: boolean;
 }) => {
   const theme = useTheme();
   return (
@@ -145,6 +152,7 @@ export const ProgramsRow = ({
           parentRef={parentRef}
           isActive={isActive}
           data={data}
+          loop={loop}
         />
       )}
     </SpatialNavigationNode>

@@ -19,6 +19,7 @@ import { useTVPanEvent } from './src/components/PanEvent/useTVPanEvent';
 import { SpatialNavigationDeviceTypeProvider } from '../lib/src/spatial-navigation/context/DeviceContext';
 import { ListWithVariableSize } from './src/pages/ListWithVariableSize';
 import { AsynchronousContent } from './src/pages/AsynchronousContent';
+import { LoopListPage } from './src/pages/LoopListPage';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -31,6 +32,7 @@ export type RootTabParamList = {
   GridWithLongNodesPage: undefined;
   ListWithVariableSize: undefined;
   AsynchronousContent: undefined;
+  LoopListPage: undefined;
 };
 
 export type RootStackParamList = {
@@ -60,6 +62,7 @@ const TabNavigator = () => {
         <Tab.Screen name="GridWithLongNodesPage" component={GridWithLongNodesPage} />
         <Tab.Screen name="ListWithVariableSize" component={ListWithVariableSize} />
         <Tab.Screen name="AsynchronousContent" component={AsynchronousContent} />
+        <Tab.Screen name="LoopListPage" component={LoopListPage} />
       </Tab.Navigator>
     </MenuProvider>
   );

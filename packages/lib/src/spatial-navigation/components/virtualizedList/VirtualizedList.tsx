@@ -11,6 +11,7 @@ import { getSizeInPxFromOneItemToAnother } from './helpers/getSizeInPxFromOneIte
 import { computeAllScrollOffsets } from './helpers/createScrollOffsetArray';
 import { getNumberOfItemsVisibleOnScreen } from './helpers/getNumberOfItemsVisibleOnScreen';
 import { getAdditionalNumberOfItemsRendered } from './helpers/getAdditionalNumberOfItemsRendered';
+import { computeLoopItemOffsets, getLoopWindowSizeInPx } from './helpers/computeLoopItemOffsets';
 
 export type ScrollBehavior = 'stick-to-start' | 'stick-to-end' | 'jump-on-scroll';
 export interface VirtualizedListProps<T> {
@@ -49,6 +50,18 @@ export interface VirtualizedListProps<T> {
   listSizeInPx: number;
   scrollBehavior?: ScrollBehavior;
   testID?: string;
+  /**
+   * Internal. Set by the SpatialNavigationVirtualizedList when `loop` is enabled.
+   * `data` is then a window made of whole cycles of the real data, and the indexes
+   * (`currentlyFocusedItemIndex`, `index` given to `renderItem`) are absolute indexes: `data[0]` is at `indexOffset`.
+   */
+  loop?: boolean;
+  /** Internal (loop). Absolute index of `data[0]`. */
+  indexOffset?: number;
+  /** Internal (loop). Offset in px of `data[0]` in the absolute coordinates system. */
+  startOffsetPx?: number;
+  /** Internal (loop). Called with the number of items actually rendered, to size the loop window. */
+  onRenderedItemsCountChange?: (numberOfRenderedItems: number) => void;
 }
 
 const useOnEndReached = ({
@@ -83,6 +96,8 @@ const useOnEndReached = ({
   ]);
 };
 
+const EMPTY_DATA: never[] = [];
+
 const ItemContainerWithAnimatedStyle = typedMemo(
   <T,>({
     item,
@@ -91,6 +106,7 @@ const ItemContainerWithAnimatedStyle = typedMemo(
     itemSize,
     vertical,
     data,
+    positionPx,
   }: {
     item: T;
     index: number;
@@ -98,13 +114,17 @@ const ItemContainerWithAnimatedStyle = typedMemo(
     itemSize: number | ((item: T) => number);
     vertical: boolean;
     data: T[];
+    /** When given (loop), the position of the item in px. `index` is then an absolute index and is not used to compute it. */
+    positionPx?: number;
   }) => {
     const computeOffset = useCallback(
-      (item: T, index: number) =>
-        typeof itemSize === 'number'
+      (item: T, index: number) => {
+        if (positionPx !== undefined) return positionPx;
+        return typeof itemSize === 'number'
           ? index * itemSize
-          : data.slice(0, index).reduce((acc, item) => acc + itemSize(item), 0),
-      [data, itemSize],
+          : data.slice(0, index).reduce((acc, item) => acc + itemSize(item), 0);
+      },
+      [data, itemSize, positionPx],
     );
 
     const style = useMemo(
@@ -147,7 +167,14 @@ export const VirtualizedList = typedMemo(
     listSizeInPx,
     scrollBehavior = 'stick-to-start',
     testID,
+    loop = false,
+    indexOffset = 0,
+    startOffsetPx = 0,
+    onRenderedItemsCountChange,
   }: VirtualizedListProps<T>) => {
+    // In loop mode, `currentlyFocusedItemIndex` is an absolute index: `focusedIndex` is its position in `data`
+    const focusedIndex = currentlyFocusedItemIndex - indexOffset;
+
     const numberOfItemsVisibleOnScreen = getNumberOfItemsVisibleOnScreen({
       data,
       listSizeInPx,
@@ -162,7 +189,7 @@ export const VirtualizedList = typedMemo(
 
     const range = getRange({
       data,
-      currentlyFocusedItemIndex,
+      currentlyFocusedItemIndex: focusedIndex,
       numberOfRenderedItems: numberOfItemsToRender,
       numberOfItemsVisibleOnScreen,
       scrollBehavior,
@@ -170,44 +197,68 @@ export const VirtualizedList = typedMemo(
 
     const vertical = orientation === 'vertical';
 
+    // Only used in loop mode: items are placed in an absolute coordinates system, the same way whatever the window is
+    const loopItemOffsets = useMemo(
+      () => (loop ? computeLoopItemOffsets({ data, itemSize, startOffsetPx }) : undefined),
+      [loop, data, itemSize, startOffsetPx],
+    );
+
     const totalVirtualizedListSize = useMemo(
-      () => getSizeInPxFromOneItemToAnother(data, itemSize, 0, data.length),
-      [data, itemSize],
+      () =>
+        loop
+          ? Math.max(startOffsetPx, 0) + getLoopWindowSizeInPx(data, itemSize)
+          : getSizeInPxFromOneItemToAnother(data, itemSize, 0, data.length),
+      [loop, startOffsetPx, data, itemSize],
     );
 
     const dataSliceToRender = data.slice(range.start, range.end + 1);
 
     const allScrollOffsets = useMemo(
       () =>
-        computeAllScrollOffsets({
-          itemSize: itemSize,
-          nbMaxOfItems: nbMaxOfItems ?? data.length,
-          numberOfItemsVisibleOnScreen: numberOfItemsVisibleOnScreen,
-          scrollBehavior: scrollBehavior,
-          data: data,
-          listSizeInPx: listSizeInPx,
-        }),
-      [data, itemSize, listSizeInPx, nbMaxOfItems, numberOfItemsVisibleOnScreen, scrollBehavior],
+        loopItemOffsets
+          ? loopItemOffsets.map((offset) => -offset)
+          : computeAllScrollOffsets({
+              itemSize: itemSize,
+              nbMaxOfItems: nbMaxOfItems ?? data.length,
+              numberOfItemsVisibleOnScreen: numberOfItemsVisibleOnScreen,
+              scrollBehavior: scrollBehavior,
+              data: data,
+              listSizeInPx: listSizeInPx,
+            }),
+      [
+        data,
+        itemSize,
+        listSizeInPx,
+        nbMaxOfItems,
+        numberOfItemsVisibleOnScreen,
+        scrollBehavior,
+        loopItemOffsets,
+      ],
     );
 
     useOnEndReached({
       numberOfItems: data.length,
       range,
-      currentlyFocusedItemIndex,
+      currentlyFocusedItemIndex: focusedIndex,
       onEndReachedThresholdItemsNumber,
-      onEndReached,
+      // A looping list has no end
+      onEndReached: loop ? undefined : onEndReached,
     });
+
+    useEffect(() => {
+      onRenderedItemsCountChange?.(numberOfItemsToRender);
+    }, [onRenderedItemsCountChange, numberOfItemsToRender]);
 
     const animatedStyle =
       Platform.OS === 'web'
         ? useWebVirtualizedListAnimation({
-            currentlyFocusedItemIndex,
+            currentlyFocusedItemIndex: focusedIndex,
             vertical,
             scrollDuration,
             scrollOffsetsArray: allScrollOffsets,
           })
         : useVirtualizedListAnimation({
-            currentlyFocusedItemIndex,
+            currentlyFocusedItemIndex: focusedIndex,
             vertical,
             scrollDuration,
             scrollOffsetsArray: allScrollOffsets,
@@ -221,7 +272,11 @@ export const VirtualizedList = typedMemo(
      * But with recycling, the first element won't be unmounted : it is moved to the end and its props are updated.
      * See https://medium.com/@moshe_31114/building-our-recycle-list-solution-in-react-17a21a9605a0  */
     const recycledKeyExtractor = useCallback(
-      (index: number) => `recycled_item_${index % numberOfItemsToRender}`,
+      // `index` can be negative when the list loops
+      (index: number) =>
+        `recycled_item_${
+          ((index % numberOfItemsToRender) + numberOfItemsToRender) % numberOfItemsToRender
+        }`,
       [numberOfItemsToRender],
     );
 
@@ -265,7 +320,8 @@ export const VirtualizedList = typedMemo(
       >
         <View>
           {dataSliceToRender.map((item, virtualIndex) => {
-            const index = range.start + virtualIndex;
+            const localIndex = range.start + virtualIndex;
+            const index = indexOffset + localIndex;
             return (
               <ItemContainerWithAnimatedStyle<T>
                 key={keyExtractor ? keyExtractor(index) : recycledKeyExtractor(index)}
@@ -274,7 +330,8 @@ export const VirtualizedList = typedMemo(
                 index={index}
                 itemSize={itemSize}
                 vertical={vertical}
-                data={data}
+                data={loop ? EMPTY_DATA : data}
+                positionPx={loopItemOffsets?.[localIndex]}
               />
             );
           })}
